@@ -1,0 +1,16 @@
+{% for activity in activities %}
+<tr>
+    <td>{{ activity.user.username }}</td>
+    <td>{{ activity.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+    <td>{{ activity.activity }}</td>
+    <td>
+        {% if activity.details %}
+        <pre class="bg-light p-2 rounded" style="white-space: pre-wrap; word-break: break-all;"><code>{{ activity.details }}</code></pre>
+        {% endif %}
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="4" class="text-center">No activity found.</td>
+</tr>
+{% endfor %}

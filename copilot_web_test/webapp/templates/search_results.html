@@ -1,0 +1,14 @@
+{% for email in emails %}
+<tr>
+    <td>{{ email.title }}</td>
+    <td>{{ email.sender_name }}</td>
+    <td>{{ email.date_sent.strftime('%Y-%m-%d %H:%M') }}</td>
+    <td>
+        <a href="{{ url_for('main.view_email', email_id=email.unique_email_id) }}" class="btn btn-outline-primary btn-sm">Open</a>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="4" class="text-center">No emails found.</td>
+</tr>
+{% endfor %}

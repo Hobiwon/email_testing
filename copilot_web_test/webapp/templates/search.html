@@ -1,0 +1,253 @@
+{% extends "layout.html" %}
+{% block title %}Search Emails{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- Advanced Filter Panel -->
+        <div class="col-lg-3">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Advanced Filters</h4>
+                </div>
+                <div class="card-body">
+                    <form id="filter-form">
+                        <div class="mb-3">
+                            <label for="sender" class="form-label">Sender</label>
+                            <input type="text" class="form-control" id="sender" name="sender">
+                        </div>
+                        <div class="mb-3">
+                            <label for="email_type" class="form-label">Email Type</label>
+                            <select class="form-select" id="email_type" name="email_type">
+                                <option value="">All</option>
+                                <option value="Work">Work</option>
+                                <option value="Personal">Personal</option>
+                                <option value="Spam">Spam</option>
+                                <option value="Promotion">Promotion</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="start_date" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date">
+                        </div>
+                        <div class="mb-3">
+                            <label for="end_date" class="form-label">End Date</label>
+                            <input type="date" class="form-control" id="end_date" name="end_date">
+                        </div>
+                        <div class="mb-3">
+                            <label for="date_filter" class="form-label">Date Range</label>
+                            <select class="form-select" id="date_filter" name="date_filter">
+                                <option value="">Custom Range</option>
+                                <option value="yesterday">Yesterday</option>
+                                <option value="week">Last Week</option>
+                                <option value="month">Last Month</option>
+                                <option value="year">Last Year</option>
+                            </select>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" value="true" id="has_references" name="has_references">
+                            <label class="form-check-label" for="has_references">
+                                Has References
+                            </label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" value="true" id="has_comments" name="has_comments">
+                            <label class="form-check-label" for="has_comments">
+                                Has Comments
+                            </label>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">Apply Filters</button>
+                            <button type="button" id="clear-filters" class="btn btn-secondary">Clear Filters</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email List and Search -->
+        <div class="col-lg-9">
+            <!-- Search Bar -->
+            <form id="search-form" class="mb-3">
+                <div class="input-group">
+                    <input type="text" class="form-control" placeholder="Search for emails..." name="search_term" value="{{ search_term }}">
+                    <button class="btn btn-success" type="submit">Search</button>
+                </div>
+            </form>
+
+            <!-- Email List -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Email Results</h5>
+                    <div class="d-flex align-items-center">
+                        <span class="me-2">Show:</span>
+                        <select class="form-select form-select-sm" id="per_page" name="per_page">
+                            <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                            <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                            <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="results-container" class="table-responsive">
+                    <div class="text-center p-5" id="loading-spinner">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <table class="table table-hover mb-0 d-none" id="results-table">
+                        <thead>
+                            <tr>
+                                <th scope="col" class="sortable" data-sort="title">
+                                    Title
+                                    <i class="fas fa-sort"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort="sender_name">
+                                    From
+                                    <i class="fas fa-sort"></i>
+                                </th>
+                                <th scope="col" class="sortable" data-sort="date_sent">
+                                    Date
+                                    <i class="fas fa-sort"></i>
+                                </th>
+                                <th scope="col">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="email-results-body">
+                            <!-- Initial content is now loaded via AJAX -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            <div id="pagination-container" class="mt-3">
+                <!-- AJAX content will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    let currentPage = 1;
+    let currentSort = 'date_sent';
+    let currentOrder = 'desc';
+
+    function fetchResults() {
+        const form = $('#filter-form');
+        const searchForm = $('#search-form');
+        const perPage = $('#per_page').val();
+        const dateFilter = $('#date_filter').val();
+
+        let filters = form.serializeArray().reduce((obj, item) => {
+            obj[item.name] = item.value;
+            return obj;
+        }, {});
+
+        let searchTerm = searchForm.find('input[name="search_term"]').val();
+
+        if (dateFilter) {
+            $('#start_date, #end_date').prop('disabled', true);
+        } else {
+            $('#start_date, #end_date').prop('disabled', false);
+        }
+
+        const data = {
+            page: currentPage,
+            per_page: perPage,
+            sort_by: currentSort,
+            sort_order: currentOrder,
+            search_term: searchTerm,
+            date_filter: dateFilter,
+            ...filters
+        };
+
+        $.ajax({
+            url: `{{ url_for('api.api_search') }}`,
+            type: 'GET',
+            data: data,
+            beforeSend: function() {
+                $('#loading-spinner').show();
+                $('#results-table').addClass('d-none');
+                $('#pagination-container').empty();
+            },
+            success: function(data) {
+                $('#loading-spinner').hide();
+                $('#results-table').removeClass('d-none');
+                $('#email-results-body').html(data.results_html);
+                $('#pagination-container').html(data.pagination_html);
+                updateSortIcons();
+            },
+            error: function(err) {
+                $('#loading-spinner').hide();
+                $('#results-table').removeClass('d-none');
+                $('#email-results-body').html('<tr><td colspan="4" class="text-center text-danger">An error occurred. Please try again.</td></tr>');
+                console.error('Search failed:', err);
+            }
+        });
+    }
+
+    function updateSortIcons() {
+        $('.sortable i').removeClass('fa-sort-up fa-sort-down').addClass('fa-sort');
+        const iconClass = currentOrder === 'asc' ? 'fa-sort-up' : 'fa-sort-down';
+        $(`.sortable[data-sort='${currentSort}'] i`).removeClass('fa-sort').addClass(iconClass);
+    }
+
+    // Initial load
+    fetchResults();
+
+    // Form submissions
+    $('#search-form, #filter-form').on('submit', function(e) {
+        e.preventDefault();
+        currentPage = 1;
+        fetchResults();
+    });
+
+    // Clear filters
+    $('#clear-filters').on('click', function() {
+        $('#filter-form')[0].reset();
+        $('#date_filter').val('');
+        $('#start_date, #end_date').prop('disabled', false);
+        currentPage = 1;
+        fetchResults();
+    });
+
+    // Pagination click (using event delegation)
+    $(document).on('click', '.pagination .page-link', function(e) {
+        e.preventDefault();
+        let page = $(this).data('page');
+        if (page) {
+            currentPage = page;
+            fetchResults();
+        }
+    });
+
+    // Per page change
+    $('#per_page').on('change', function() {
+        currentPage = 1;
+        fetchResults();
+    });
+
+    // Sorting click
+    $(document).on('click', '.sortable', function() {
+        let sortBy = $(this).data('sort');
+        if (sortBy === currentSort) {
+            currentOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+        } else {
+            currentSort = sortBy;
+            currentOrder = 'desc';
+        }
+        currentPage = 1;
+        fetchResults();
+    });
+
+    // Reset date filter when date pickers are used
+    $('#start_date, #end_date').on('change', function() {
+        $('#date_filter').val('');
+    });
+});
+</script>
+{% endblock %}

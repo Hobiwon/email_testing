@@ -1,0 +1,30 @@
+{% macro render_comment(comment) %}
+<div class="comment-thread mb-3" id="comment-{{ comment.id }}">
+    <div class="card comment-card">
+        <div class="card-body p-2">
+            <div class="d-flex justify-content-between">
+                <small class="fw-bold">{{ comment.user.username }}</small>
+                <small class="text-muted">{{ comment.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+            </div>
+            <p class="card-text small mt-1">{{ comment.body }}</p>
+            <button class="btn btn-sm btn-outline-secondary reply-btn py-0">Reply</button>
+            
+            <form class="reply-form d-none mt-2" data-parent-id="{{ comment.id }}">
+                <div class="mb-2">
+                    <textarea class="form-control form-control-sm" name="body" rows="2" required></textarea>
+                </div>
+                <button type="submit" class="btn btn-sm btn-primary py-0">Submit</button>
+                <button type="button" class="btn btn-sm btn-light py-0 cancel-reply-btn">Cancel</button>
+            </form>
+        </div>
+    </div>
+    
+    {% if comment.replies %}
+    <div class="replies ps-4 mt-2">
+        {% for reply in comment.replies | sort(attribute='timestamp') %}
+            {{ render_comment(reply) }}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}

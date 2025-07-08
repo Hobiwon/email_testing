@@ -1,0 +1,12 @@
+.reply-btn {
+    visibility: hidden;
+}
+
+.comment-card:hover .reply-btn {
+    visibility: visible;
+}
+
+#comment-section {
+    max-height: 80vh;
+    overflow-y: auto;
+}

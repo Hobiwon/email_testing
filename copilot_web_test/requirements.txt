@@ -1,0 +1,10 @@
+Flask
+Flask-Login
+SQLAlchemy
+cx_Oracle
+oracledb
+werkzeug
+pydantic
+pydantic-settings
+Faker
+waitress

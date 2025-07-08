@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+{% block title %}User Activity{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">User Activity</h2>
+
+    <!-- Filter Form -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form id="activity-filter-form" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label for="user_id" class="form-label">Filter by User</label>
+                    <select name="user_id" id="user_id" class="form-select">
+                        <option value="">All Users</option>
+                        {% for user in users %}
+                        <option value="{{ user.id }}">{{ user.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="per_page" class="form-label">Results per page</label>
+                    <select name="per_page" id="per_page" class="form-select">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+                <div class="col-md-4 d-grid">
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Activity Table -->
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th scope="col">User</th>
+                            <th scope="col">Timestamp</th>
+                            <th scope="col">Activity</th>
+                            <th scope="col">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activity-table-body">
+                        <!-- AJAX content will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination-container" class="mt-4">
+        <!-- AJAX content will be loaded here -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    function fetchActivities(page = 1) {
+        let userId = $('#user_id').val();
+        let perPage = $('#per_page').val();
+
+        $.ajax({
+            url: `{{ url_for('api.api_activity') }}?page=${page}&per_page=${perPage}&user_id=${userId}`,
+            type: 'GET',
+            success: function(data) {
+                $('#activity-table-body').html(data.table_html);
+                $('#pagination-container').html(data.pagination_html);
+            },
+            error: function(err) {
+                console.error('Error fetching activities:', err);
+                $('#activity-table-body').html('<tr><td colspan="4" class="text-center text-danger">Error loading data.</td></tr>');
+            }
+        });
+    }
+
+    // Initial load
+    fetchActivities();
+
+    // Form submission
+    $('#activity-filter-form').on('submit', function(e) {
+        e.preventDefault();
+        fetchActivities();
+    });
+
+    // Per page change (no need for separate apply button)
+    $('#per_page').on('change', function() {
+        fetchActivities();
+    });
+
+    // Pagination clicks
+    $(document).on('click', '#pagination-container .page-link', function(e) {
+        e.preventDefault();
+        let page = $(this).data('page');
+        if (page) {
+            fetchActivities(page);
+        }
+    });
+});
+</script>
+{% endblock %}

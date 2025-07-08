@@ -1,0 +1,206 @@
+{% extends "layout.html" %}
+{% from '_comments.html' import render_comment %}
+{% block title %}Email Reader - {{ email.title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <!-- References Panel -->
+        {% if referenced_emails %}
+        <div class="col-lg-3">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Referenced Documents</h5>
+                </div>
+                <div class="accordion accordion-flush" id="referencesAccordion">
+                    {% for ref_email in referenced_emails %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="heading-{{ ref_email.unique_email_id }}">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ ref_email.unique_email_id }}" aria-expanded="false" aria-controls="collapse-{{ ref_email.unique_email_id }}">
+                                <small>{{ ref_email.unique_email_id }}</small>
+                            </button>
+                        </h2>
+                        <div id="collapse-{{ ref_email.unique_email_id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ ref_email.unique_email_id }}" data-bs-parent="#referencesAccordion">
+                            <div class="accordion-body">
+                                <p class="small">{{ ref_email.body | truncate(200, True) }}</p>
+                                <a href="{{ url_for('main.view_email', email_id=ref_email.unique_email_id) }}" class="btn btn-sm btn-outline-primary">View Full Email</a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Main Email Reader -->
+        <div class="col-lg-{% if referenced_emails %}6{% else %}9{% endif %}">
+            <div class="card email-reader-card shadow-sm">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="mb-0">{{ email.title }}</h4>
+                        <small class="text-muted">Type: <span class="badge bg-secondary">{{ email.email_type }}</span></small>
+                    </div>
+                    <a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm">
+                        &larr; Back
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="email-meta mb-3">
+                        <p class="mb-1"><strong>From:</strong> {{ email.sender_name }} &lt;{{ email.sender_email }}&gt;</p>
+                        <p class="mb-1"><strong>To:</strong> {{ current_user.username }}</p>
+                        <p class="mb-1"><strong>Date:</strong> {{ email.date_sent.strftime('%A, %B %d, %Y %I:%M %p') }}</p>
+                    </div>
+                    <hr>
+                    <div class="email-body mt-3 p-3 bg-white border rounded">
+                        {{ email_body | safe }}
+                    </div>
+                </div>
+                <div class="card-footer text-muted text-center small">
+                    Email ID: {{ email.unique_email_id }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Comments Panel -->
+        <div class="col-lg-3">
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">Comments</h5>
+                </div>
+                <div class="card-body" id="comment-section">
+                    <!-- New Comment Trigger -->
+                    <div class="mb-3">
+                        <button id="add-comment-btn" class="btn btn-secondary btn-sm w-100">Add a Comment</button>
+                    </div>
+
+                    <!-- New Comment Form (Initially Hidden) -->
+                    <form id="comment-form" class="mb-3 d-none">
+                        <input type="hidden" name="email_id" value="{{ email.unique_email_id }}">
+                        <div class="mb-2">
+                            <textarea class="form-control" name="body" rows="3" placeholder="Add a comment..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">Post Comment</button>
+                        <button type="button" class="btn btn-light btn-sm" id="cancel-comment-btn">Cancel</button>
+                    </form>
+                    <hr>
+                    <!-- Existing Comments -->
+                    <div id="comments-container">
+                        {% if comments %}
+                            {% for comment in comments %}
+                                {{ render_comment(comment) }}
+                            {% endfor %}
+                        {% else %}
+                            <p id="no-comments-msg" class="text-muted small">No comments yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Function to handle comment/reply submission
+    function handleCommentSubmit(form) {
+        const formData = new FormData(form);
+        const url = "{{ url_for('api.add_comment') }}";
+
+        $.ajax({
+            type: 'POST',
+            url: url,
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                if (response.success) {
+                    const newCommentHtml = response.html;
+                    if (response.parentId) {
+                        // It's a reply
+                        const parentComment = $('#comment-' + response.parentId);
+                        let repliesContainer = parentComment.find('.replies');
+                        if (!repliesContainer.length) {
+                            repliesContainer = $('<div class="replies ps-4 mt-2"></div>');
+                            parentComment.append(repliesContainer);
+                        }
+                        repliesContainer.append(newCommentHtml);
+                    } else {
+                        // It's a top-level comment
+                        $('#comments-container').prepend(newCommentHtml);
+                        $('#no-comments-msg').hide();
+                    }
+                    form.reset();
+                    $(form).addClass('d-none');
+                    if ($(form).attr('id') === 'comment-form') {
+                        $('#add-comment-btn').removeClass('d-none');
+                    }
+                } else {
+                    alert('Error: ' + response.error);
+                }
+            },
+            error: function() {
+                alert('An unexpected error occurred.');
+            }
+        });
+    }
+
+    // Handle top-level comment form submission
+    $('#comment-form').on('submit', function(e) {
+        e.preventDefault();
+        handleCommentSubmit(this);
+    });
+
+    // Handle reply form submission (using event delegation)
+    $(document).on('submit', '.reply-form', function(e) {
+        e.preventDefault();
+        // Add email_id to the form data for replies
+        const emailId = $('#comment-form input[name="email_id"]').val();
+        $(this).append(`<input type="hidden" name="email_id" value="${emailId}">`);
+        $(this).append(`<input type="hidden" name="parent_id" value="${$(this).data('parent-id')}">`);
+        handleCommentSubmit(this);
+    });
+
+    // Toggle reply form visibility
+    $(document).on('click', '.reply-btn', function(e) {
+        e.stopPropagation(); // Prevent click from bubbling up to the document
+        const replyForm = $(this).siblings('.reply-form');
+        // Hide other open forms before showing the new one
+        $('.reply-form').not(replyForm).addClass('d-none');
+        replyForm.toggleClass('d-none');
+    });
+
+    // Show the main comment form
+    $('#add-comment-btn').on('click', function() {
+        $(this).addClass('d-none');
+        $('#comment-form').removeClass('d-none');
+    });
+
+    // Hide the main comment form on cancel
+    $('#cancel-comment-btn').on('click', function() {
+        $('#comment-form').addClass('d-none');
+        $('#add-comment-btn').removeClass('d-none');
+    });
+
+    // Click away to close forms
+    $(document).on('click', function(e) {
+        // For reply forms
+        if (!$(e.target).closest('.comment-thread').length) {
+            $('.reply-form').addClass('d-none');
+        }
+        // For the main comment form
+        if (!$(e.target).closest('#comment-section').length) {
+            $('#comment-form').addClass('d-none');
+            $('#add-comment-btn').removeClass('d-none');
+        }
+    });
+
+    // Stop propagation for forms to prevent them from closing when clicked inside
+    $(document).on('click', '#comment-form, .reply-form', function(e) {
+        e.stopPropagation();
+    });
+});
+</script>
+{% endblock %}
