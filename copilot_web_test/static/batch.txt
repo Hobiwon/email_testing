@@ -1,0 +1,187 @@
+import re
+import logging
+import xml.etree.ElementTree as ET
+from sqlalchemy import create_engine, select, insert, Table, Column, String, ForeignKey, Integer, DateTime, func
+from sqlalchemy.orm import declarative_base, Session, sessionmaker
+from sqlalchemy.dialects.oracle import insert as oracle_insert
+
+# --- Logging setup ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# --- SQLAlchemy setup ---
+Base = declarative_base()
+
+# --- Models ---
+
+class Document(Base):
+    __tablename__ = 'documents'
+
+    uniqid = Column(String(50), primary_key=True)
+    doctype = Column(String(20))
+    scno = Column(String(20))
+    docdate = Column(String(20))  # Use Date if stored as proper date
+    xml_text = Column(String)
+
+document_links = Table(
+    'document_links', Base.metadata,
+    Column('source_uniqid', String(50), ForeignKey('documents.uniqid'), primary_key=True),
+    Column('target_uniqid', String(50), ForeignKey('documents.uniqid'), primary_key=True),
+    Column('ref_text', String(200))
+)
+
+class DanglingReference(Base):
+    __tablename__ = 'dangling_references'
+
+    id = Column(String(50), primary_key=True)
+    source_uniqid = Column(String(50))
+    ref_text = Column(String(200))
+    reason = Column(String(200))
+
+class LinkJobLog(Base):
+    __tablename__ = 'link_job_log'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_time = Column(DateTime, default=func.current_timestamp())
+    max_uniqid = Column(String(50))
+    docs_processed = Column(Integer)
+    links_created = Column(Integer)
+    dangling_refs = Column(Integer)
+
+# --- Constants ---
+REFERENCE_TAG = './/REF'
+REFERENCE_PATTERN = r'^([A-Z]{2,5})-(\d{2,5})-(\d{4})$'
+
+# --- Functions ---
+
+def parse_reference(ref_text):
+    match = re.match(REFERENCE_PATTERN, ref_text.strip())
+    if match:
+        doctype, scno, year = match.groups()
+        return doctype, scno, year
+    return None
+
+def extract_refs_from_xml(xml_text):
+    refs = []
+    try:
+        root = ET.fromstring(xml_text)
+        for node in root.findall(REFERENCE_TAG):
+            if node.text:
+                refs.append(node.text.strip())
+    except ET.ParseError:
+        logger.warning("Invalid XML encountered.")
+    return refs
+
+def build_reference_map(session):
+    rows = session.execute(select(Document.uniqid, Document.doctype, Document.scno, Document.docdate)).fetchall()
+    refmap = {}
+    for uniqid, doctype, scno, docdate in rows:
+        year = docdate[:4] if docdate else None
+        key = (doctype, scno, year)
+        refmap[key] = uniqid
+    return refmap
+
+def get_max_processed_uniqid(session):
+    max_id = session.execute(
+        select(document_links.c.source_uniqid)
+        .order_by(document_links.c.source_uniqid.desc())
+        .limit(1)
+    ).scalar()
+    return max_id
+
+def generate_links_append_only(session: Session):
+    logger.info("Starting incremental link generation (append-only)...")
+
+    refmap = build_reference_map(session)
+    max_processed_id = get_max_processed_uniqid(session) or '0'
+
+    logger.info(f"Most recent processed uniqid: {max_processed_id}")
+
+    docs = session.execute(
+        select(Document.uniqid, Document.xml_text)
+        .where(Document.uniqid > max_processed_id)
+        .order_by(Document.uniqid)
+    ).fetchall()
+
+    if not docs:
+        logger.info("No new documents to process.")
+        return
+
+    links_to_insert = []
+    dangling_to_insert = []
+
+    for source_uniqid, xml_text in docs:
+        logger.info(f"Processing document {source_uniqid}")
+
+        if not xml_text:
+            continue
+
+        refs = extract_refs_from_xml(xml_text)
+        logger.info(f"  Found {len(refs)} <REF> tags")
+
+        for ref in refs:
+            parsed = parse_reference(ref)
+            if parsed:
+                target_uniqid = refmap.get(parsed)
+                if target_uniqid and target_uniqid != source_uniqid:
+                    links_to_insert.append({
+                        'source_uniqid': source_uniqid,
+                        'target_uniqid': target_uniqid,
+                        'ref_text': ref
+                    })
+                else:
+                    dangling_to_insert.append({
+                        'id': f"{source_uniqid}-{ref}",
+                        'source_uniqid': source_uniqid,
+                        'ref_text': ref,
+                        'reason': 'No match or self-reference'
+                    })
+            else:
+                dangling_to_insert.append({
+                    'id': f"{source_uniqid}-{ref}",
+                    'source_uniqid': source_uniqid,
+                    'ref_text': ref,
+                    'reason': 'Failed regex'
+                })
+
+    if links_to_insert:
+        session.execute(insert(document_links), links_to_insert)
+        logger.info(f"Inserted {len(links_to_insert)} new links.")
+
+    if dangling_to_insert:
+        session.bulk_insert_mappings(DanglingReference, dangling_to_insert)
+        logger.info(f"Recorded {len(dangling_to_insert)} dangling references.")
+
+    max_doc_id = docs[-1][0] if docs else None  # last uniqid processed
+
+    session.add(LinkJobLog(
+        max_uniqid=max_doc_id,
+        docs_processed=len(docs),
+        links_created=len(links_to_insert),
+        dangling_refs=len(dangling_to_insert)
+    ))
+
+    session.commit()
+    logger.info("Link generation complete.")
+
+# --- Runner ---
+
+if __name__ == '__main__':
+    # Update with your connection info
+    engine = create_engine("oracle+oracledb://user:password@host:port/service_name")
+    SessionLocal = sessionmaker(bind=engine)
+
+    with SessionLocal() as session:
+        generate_links_append_only(session)
+
+
+==========================================================================================================
+
+CREATE TABLE link_job_log (
+    id              NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    run_time        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    max_uniqid      VARCHAR2(50),
+    docs_processed  NUMBER,
+    links_created   NUMBER,
+    dangling_refs   NUMBER
+);
