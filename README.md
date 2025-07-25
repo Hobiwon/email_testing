@@ -22,21 +22,23 @@ This repository demonstrates how to use the [`ollama`](https://pypi.org/project/
 
 ```bash
 pip install ollama
+```
 
 2. Set your remote host environment variable (or pass it programmatically)
 Option A: Set environment variable
-
+```bash
 export OLLAMA_BASE_URL=http://<REMOTE_IP>:11434
-
+```
 Option B: Use the base URL directly in code
-
+```python
 from ollama import Client
 
 client = Client(host='http://<REMOTE_IP>:11434')
-
-🚀 Example Usage
+```
+  
+🚀 Example Usage  
 🔹 Basic Prompt Completion
-
+```python
 from ollama import Client
 
 client = Client(host='http://<REMOTE_IP>:11434')
@@ -46,16 +48,16 @@ response = client.chat(model='llama3', messages=[
 ])
 
 print(response['message']['content'])
-
+```
 🔹 Streaming Response
-
+```python
 for chunk in client.chat(model='llama3', messages=[
     {'role': 'user', 'content': 'Write a haiku about the stars.'}
 ], stream=True):
     print(chunk['message']['content'], end='', flush=True)
-
+```
 🔹 Multi-Turn Conversation
-
+```python
 messages = [
     {'role': 'system', 'content': 'You are a helpful assistant.'},
     {'role': 'user', 'content': 'Who is Ada Lovelace?'},
@@ -64,55 +66,33 @@ messages = [
 
 response = client.chat(model='llama3', messages=messages)
 print(response['message']['content'])
-
+```
 🛠️ Utility Functions
 🔸 List Available Models on the Server
-
+```python
 models = client.list()
 for m in models['models']:
     print(f"{m['name']} (size: {m['size']} bytes)")
-
-🔸 Pull a New Model to the Remote Server
-
-client.pull(model='mistral')
+```
 
 This will download the model to the remote server running Ollama. Make sure it has access to the internet.
 🔸 Check Model Information
-
+```python
 info = client.show(model='llama3')
 print(f"Model: {info['name']}")
 print(f"Parameters: {info.get('parameters', 'N/A')}")
+```
 
-🔸 Delete a Model from the Remote Server
-
-client.delete(model='mistral')
-
-Use with caution—this will remove the model from the remote host.
 🔸 Generate Embeddings
-
+```python
 result = client.embeddings(model='nomic-embed-text', prompt='The quick brown fox jumps over the lazy dog.')
 embedding = result['embedding']
 
 print(f'Got embedding with {len(embedding)} dimensions')
-
+```
 🐳 Running Ollama Remotely via Docker
 
 On the remote machine:
-
+```bash
 docker run -d -p 11434:11434 --name ollama-server ollama/ollama
-
-Pull a model to get started:
-
-docker exec -it ollama-server ollama pull llama3
-
-Ensure port 11434 is open to your local machine or tunneled securely.
-🔒 Security Warning
-
-This setup assumes a trusted network. If exposing Ollama to the public internet, use authentication proxies, SSH tunnels, or VPNs to avoid unauthorized access.
-📚 Resources
-
-    Ollama Python SDK on PyPI
-
-    Ollama Documentation
-
-    Ollama GitHub
+```
